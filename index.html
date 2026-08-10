@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>VaultUSD Admin</title>
+  <style>
+    :root { --bg: #0a0e17; --card: #141924; --primary: #00d4ff; --accent: #00ff88; --danger: #ff4444; --text: #e0e6ed; --border: #2a3444; --sub: #8892a0; }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 12px; font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); font-size: 13px; }
+    .container { max-width: 480px; margin: auto; }
+    .box { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 12px; }
+    h1, h2 { margin: 0 0 12px; color: var(--primary); text-align: center; }
+    input, button { width: 100%; padding: 12px; margin: 6px 0; border: 1px solid var(--border); background: #1a2030; color: #fff; border-radius: 8px; font-size: 14px; }
+    button { background: var(--primary); color: #000; font-weight: 600; border: none; cursor: pointer; }
+    button:disabled { opacity: 0.5; }
+    .btn-green { background: var(--accent); color: #000; }
+    .btn-red { background: var(--danger); color: #fff; }
+    .hidden { display: none !important; }
+    .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+    .stat-card { background: #1a2030; padding: 10px; border-radius: 8px; text-align: center; border: 1px solid var(--border); }
+    .stat-card span { display: block; font-size: 18px; font-weight: bold; color: var(--primary); }
+    .row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); }
+    .row:last-child { border-bottom: none; }
+    .badge { padding: 3px 6px; border-radius: 4px; font-size: 11px; background: #333; }
+    .badge.pending { background: #ff9900; color: #000; }
+    .badge.approved { background: #00ff88; color: #000; }
+    .badge.rejected { background: #ff4444; color: #fff; }
+    #status { background: #111; border: 1px solid #333; padding: 6px; border-radius: 6px; margin-bottom: 10px; font-family: monospace; font-size: 11px; text-align: center; color: #0f0; }
+    .tabs { display: flex; gap: 6px; margin-bottom: 10px; }
+    .tab { flex: 1; padding: 10px; background: #1a2030; border: 1px solid var(--border); border-radius: 8px; text-align: center; cursor: pointer; }
+    .tab.active { background: var(--primary); color: #000; border-color: var(--primary); }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div id="status">🔄 جاري التحميل...</div>
+    <div id="loginBox" class="box">
+      <h1>🔐 لوحة الإدارة</h1>
+      <input type="password" id="adminPass" placeholder="كلمة مرور الإدارة">
+      <button id="btnAdminLogin">دخول</button>
+    </div>
+    <div id="dashBox" class="box hidden">
+      <h2>الإحصائيات</h2>
+      <div class="stat-grid">
+        <div class="stat-card"><span id="statUsers">0</span>مستخدم</div>
+        <div class="stat-card"><span id="statActive">0</span>باقات نشطة</div>
+        <div class="stat-card"><span id="statDep">0</span>إيداع معلق</div>
+        <div class="stat-card"><span id="statWith">0</span>سحب معلق</div>
+      </div>
+      <div class="tabs">
+        <div class="tab active" data-t="dep">الإيداعات</div>
+        <div class="tab" data-t="with">السحوبات</div>
+        <div class="tab" data-t="users">المستخدمين</div>
+      </div>
+      <div id="view-dep"><div id="depList">جاري التحميل...</div></div>
+      <div id="view-with" class="hidden"><div id="withList">جاري التحميل...</div></div>
+      <div id="view-users" class="hidden"><div id="userList">جاري التحميل...</div></div>
+      <button id="btnOut" style="margin-top:12px; background:#333;">خروج</button>
+    </div>
+  </div>
+
+  <script type="module">
+    const $ = id => document.getElementById(id);
+    const st = (t, c='#0f0') => { const e=$('status'); e.textContent=t; e.style.color=c; };
+    let db;
+    try {
+      const { initializeApp } = await import("https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js");
+      const { getFirestore } = await import("https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js");
+      const cfg = { apiKey:"AIzaSyBEPY92lQXZHchrmPbmeNRjFG3FtkiN3a0", authDomain:"vaultusd-c1998.firebaseapp.com", projectId:"vaultusd-c1998", storageBucket:"vaultusd-c1998.firebasestorage.app", messagingSenderId:"627849430299", appId:"1:627849430299:web:d5680cc24a21861f367fbe" };
+      initializeApp(cfg); db = getFirestore(); st("✅ جاهز","#0f0");
+    } catch(e) { st("❌ خطأ Firebase","#f44"); }
+
+    const { collection, query, where, onSnapshot, updateDoc, doc, increment, serverTimestamp, getDocs } = await import("https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js");
+
+    $('btnAdminLogin').onclick = () => {
+      if($('adminPass').value === '0000') {
+        $('loginBox').classList.add('hidden'); $('dashBox').classList.remove('hidden');
+        loadStats(); loadDep(); loadWith(); loadUsers();
+      } else alert('❌ كلمة المرور خاطئة');
+    };
+
+    $('btnOut').onclick = () => { $('dashBox').classList.add('hidden'); $('loginBox').classList.remove('hidden'); $('adminPass').value=''; };
+
+    document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+      t.classList.add('active');
+      ['dep','with','users'].forEach(v => $(`view-${v}`).classList.toggle('hidden', v !== t.dataset.t));
+    }));
+
+    function loadStats() {
+      onSnapshot(collection(db, 'users'), s => $('statUsers').textContent = s.size);
+      onSnapshot(query(collection(db, 'users'), where('activePackage', '!=', '')), s => $('statActive').textContent = s.size);
+      onSnapshot(query(collection(db, 'deposits'), where('status', '==', 'pending')), s => $('statDep').textContent = s.size);
+      onSnapshot(query(collection(db, 'withdrawals'), where('status', '==', 'pending')), s => $('statWith').textContent = s.size);
+    }
+
+    function renderList(id, items, type) {
+      const el = $(id);
+      if(!items.length) { el.innerHTML = '<div style="padding:10px;text-align:center;color:#888;">لا توجد بيانات</div>'; return; }
+      el.innerHTML = items.map(i => {
+        const badge = `<span class="badge ${i.status}">${i.status==='pending'?'معلق':i.status}</span>`;
+        const btns = i.status==='pending' ? 
+          `<button class="btn-green" style="padding:6px;margin:2px;" onclick="window.approve('${type}','${i.id}')">✅</button>
+           <button class="btn-red" style="padding:6px;margin:2px;" onclick="window.reject('${type}','${i.id}')">❌</button>` : '';
+        return `<div class="row"><div><b>${i.uid?.slice(0,8)}...</b><br>${i.network||''} | ${i.amount}$ ${i.txid?`<br>TXID: ${i.txid}`:''} ${i.address?`<br>Addr: ${i.address}`:''}</div><div>${badge}${btns}</div></div>`;
+      }).join('');
+    }
+
+    function loadDep() {
+      onSnapshot(query(collection(db, 'deposits'), where('status', '==', 'pending')), s => {
+        const items = s.docs.map(d => ({id:d.id, ...d.data()}));
+        renderList('depList', items, 'deposits');
+      });
+    }
+    function loadWith() {
+      onSnapshot(query(collection(db, 'withdrawals'), where('status', '==', 'pending')), s => {
+        const items = s.docs.map(d => ({id:d.id, ...d.data()}));
+        renderList('withList', items, 'withdrawals');
+      });
+    }
+    function loadUsers() {
+      onSnapshot(collection(db, 'users'), s => {
+        const items = s.docs.map(d => ({id:d.id, ...d.data()}));
+        const el = $('userList');
+        el.innerHTML = items.map(u => {
+          const exp = u.packageActivatedAt ? new Date(u.packageActivatedAt.toDate().getTime()+30*24*60*60*1000).toLocaleDateString('ar') : '-';
+          return `<div class="row"><div><b>${u.username}</b><br>الرصيد: $${(u.balance||0).toFixed(2)}<br>الباقة: ${u.activePackage||'لا يوجد'} | ينتهي: ${exp}</div></div>`;
+        }).join('');
+      });
+    }
+
+    window.approve = async (col, id) => {
+      try {
+        const ref = doc(db, col, id);
+        const snap = await getDocs(query(collection(db, col), where('__name__', '==', id)));
+        const data = snap.docs[0]?.data();
+        if(!data) return;
+        await updateDoc(ref, { status: 'approved' });
+        if(col==='deposits') await updateDoc(doc(db, 'users', data.uid), { balance: increment(data.amount) });
+        if(col==='withdrawals') await updateDoc(doc(db, 'users', data.uid), { balance: increment(-data.amount) });
+        alert('✅ تمت الموافقة');
+      } catch(e) { alert('❌ ' + e.message); }
+    };
+    window.reject = async (col, id) => {
+      try { await updateDoc(doc(db, col, id), { status: 'rejected' }); alert('❌ تم الرفض'); }
+      catch(e) { alert('❌ ' + e.message); }
+    };
+  </script>
+</body>
+</html>
