@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VaultUSD Admin</title>
+  <style>
+    :root { --bg: #0b0f19; --card: #151a28; --text: #e0e6ed; --primary: #00d4ff; --accent: #00ff88; --danger: #ff4444; --warn: #ffaa00; }
+    body { font-family: 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 20px; }
+    .container { max-width: 1400px; margin: auto; }
+    .lang-bar { display: flex; justify-content: center; gap: 10px; margin-bottom: 20px; }
+    .lang-btn { padding: 6px 12px; background: #1a2030; color: #aaa; border: 1px solid #333; border-radius: 6px; cursor: pointer; }
+    .lang-btn.active { background: var(--primary); color: #000; border-color: var(--primary); }
+    .login-box { max-width: 400px; margin: 100px auto; background: var(--card); padding: 30px; border-radius: 12px; text-align: center; }
+    input, button, select { width: 100%; padding: 12px; margin: 8px 0; border: 1px solid #333; background: #1a2030; color: white; border-radius: 8px; box-sizing: border-box; }
+    button { background: var(--primary); color: #000; font-weight: bold; cursor: pointer; border: none; }
+    button:hover { opacity: 0.85; }
+    table { width: 100%; border-collapse: collapse; margin: 20px 0; background: var(--card); border-radius: 8px; overflow: hidden; font-size: 14px; }
+    th, td { padding: 12px; text-align: right; border-bottom: 1px solid #333; }
+    th { background: #1a2030; color: var(--primary); }
+    .status-pending { color: var(--warn); font-weight: bold; }
+    .status-done { color: var(--accent); font-weight: bold; }
+    .hidden { display: none !important; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; margin-bottom: 20px; }
+    .panel { background: var(--card); padding: 20px; border-radius: 12px; margin-top: 20px; }
+    .info { background: #1a2030; padding: 15px; border-radius: 8px; margin-bottom: 20px; text-align: center; color: var(--accent); }
+    .stat-card { background: #1a2030; padding: 15px; border-radius: 8px; text-align: center; border: 1px solid #333; }
+    .stat-card h3 { margin: 0 0 5px; color: #888; font-size: 14px; }
+    .stat-card p { margin: 0; font-size: 24px; font-weight: bold; color: var(--primary); }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="lang-bar">
+      <button class="lang-btn active" onclick="setLang('ar')">🇸🇦 عربي</button>
+      <button class="lang-btn" onclick="setLang('en')">🇬🇧 EN</button>
+      <button class="lang-btn" onclick="setLang('fr')">🇫🇷 FR</button>
+    </div>
+    <h1 style="text-align:center; color:var(--primary);" data-i18n="adminTitle">لوحة تحكم VaultUSD</h1>
+    
+    <div id="loginBox" class="login-box">
+      <h2 data-i18n="adminLogin">دخول الأدمن</h2>
+      <input type="password" id="adminPass" data-i18n-placeholder="passPH" placeholder="كلمة المرور">
+      <button id="adminLoginBtn" data-i18n="loginBtn">دخول</button>
+    </div>
+
+    <div id="adminPanel" class="hidden">
+      <div class="info" data-i18n="autoProfitInfo">💡 الأرباح تضاف تلقائياً للمستخدمين كل 24 ساعة عند دخولهم. لا حاجة للإضافة اليدوية.</div>
+      <h3 data-i18n="statsTitle">📊 إحصائيات الباقات النشطة</h3>
+      <div class="grid" id="statsGrid"></div>
+
+      <div class="grid" style="grid-template-columns: 1fr 1fr; margin-top:20px;">
+        <div class="panel">
+          <h3 data-i18n="depositTable">📥 طلبات الإيداع</h3>
+          <table id="depositsTable"><thead><tr><th data-i18n="user">المستخدم</th><th data-i18n="amount">المبلغ</th><th data-i18n="network">الشبكة</th><th>TXID</th><th data-i18n="status">الحالة</th><th data-i18n="action">إجراء</th></tr></thead><tbody></tbody></table>
+        </div>
+        <div class="panel">
+          <h3 data-i18n="withdrawTable">💸 طلبات السحب</h3>
+          <table id="withdrawalsTable"><thead><tr><th data-i18n="user">المستخدم</th><th data-i18n="amount">المبلغ</th><th data-i18n="network">الشبكة</th><th data-i18n="wallet">المحفظة</th><th data-i18n="status">الحالة</th><th data-i18n="action">إجراء</th></tr></thead><tbody></tbody></table>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h3 data-i18n="usersTable">👥 المستخدمون والباقة النشطة</h3>
+        <table id="usersTable"><thead><tr><th data-i18n="user">المستخدم</th><th data-i18n="balance">الرصيد</th><th data-i18n="package">الباقة</th><th data-i18n="profitTimer">وقت الربح</th><th data-i18n="expiryDays">أيام متبقية</th></tr></thead><tbody></tbody></table>
+      </div>
+      <button id="logoutBtn" style="background:var(--danger); margin-top:20px; width:auto;" data-i18n="logout">خروج</button>
+    </div>
+  </div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
+    import { getFirestore, collection, onSnapshot, doc, updateDoc, increment, serverTimestamp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js";
+
+    const firebaseConfig = { apiKey: "AIzaSyBEPY92lQXZHchrmPbmeNRjFG3FtkiN3a0", authDomain: "vaultusd-c1998.firebaseapp.com", databaseURL: "https://vaultusd-c1998-default-rtdb.firebaseio.com", projectId: "vaultusd-c1998", storageBucket: "vaultusd-c1998.firebasestorage.app", messagingSenderId: "627849430299", appId: "1:627849430299:web:d5680cc24a21861f367fbe", measurementId: "G-N7T16JW68V" };
+    const app = initializeApp(firebaseConfig); const db = getFirestore(app); const $ = id => document.getElementById(id);
+
+    const i18n = {
+      ar: { adminTitle:"لوحة تحكم VaultUSD", adminLogin:"دخول الأدمن", passPH:"كلمة المرور", loginBtn:"دخول", autoProfitInfo:"💡 الأرباح تضاف تلقائياً للمستخدمين كل 24 ساعة عند دخولهم. لا حاجة للإضافة اليدوية.", statsTitle:"📊 إحصائيات الباقات النشطة", depositTable:"📥 طلبات الإيداع", withdrawTable:"💸 طلبات السحب", usersTable:"👥 المستخدمون والباقة النشطة", logout:"خروج", user:"المستخدم", amount:"المبلغ", network:"الشبكة", status:"الحالة", action:"إجراء", wallet:"المحفظة", balance:"الرصيد", package:"الباقة", profitTimer:"وقت الربح", expiryDays:"أيام متبقية", total:"إجمالي المستخدمين", pending:"قيد المراجعة", done:"تمت الإضافة", pendingW:"قيد الانتظار", paid:"تم الدفع", confirmDep:"تأكيد وإضافة", confirmPay:"تأكيد الدفع", confirmMsg:"تأكيد إضافة $", confirmPayMsg:"تأكيد دفع هذا السحب؟" },
+      en: { adminTitle:"VaultUSD Admin Panel", adminLogin:"Admin Login", passPH:"Password", loginBtn:"Login", autoProfitInfo:"💡 Profits are added automatically every 24h when users log in. No manual addition needed.", statsTitle:"📊 Active Package Stats", depositTable:"📥 Deposit Requests", withdrawTable:"💸 Withdrawal Requests", usersTable:"👥 Users & Active Packages", logout:"Logout", user:"User", amount:"Amount", network:"Network", status:"Status", action:"Action", wallet:"Wallet", balance:"Balance", package:"Package", profitTimer:"Profit Timer", expiryDays:"Days Left", total:"Total Users", pending:"Pending", done:"Completed", pendingW:"Pending", paid:"Paid", confirmDep:"Confirm & Add", confirmPay:"Confirm Payment", confirmMsg:"Confirm adding $", confirmPayMsg:"Confirm paying this withdrawal?" },
+      fr: { adminTitle:"Panneau Admin VaultUSD", adminLogin:"Connexion Admin", passPH:"Mot de passe", loginBtn:"Connexion", autoProfitInfo:"💡 Les profits sont ajoutés automatiquement toutes les 24h. Pas besoin d'ajout manuel.", statsTitle:"📊 Statistiques des Forfaits", depositTable:"📥 Demandes de Dépôt", withdrawTable:"💸 Demandes de Retrait", usersTable:"👥 Utilisateurs & Forfaits Actifs", logout:"Déconnexion", user:"Utilisateur", amount:"Montant", network:"Réseau", status:"Statut", action:"Action", wallet:"Portefeuille", balance:"Solde", package:"Forfait", profitTimer:"Minuteur Profit", expiryDays:"Jours Restants", total:"Total Utilisateurs", pending:"En attente", done:"Terminé", pendingW:"En attente", paid:"Payé", confirmDep:"Confirmer & Ajouter", confirmPay:"Confirmer Paiement", confirmMsg:"Confirmer l'ajout de $", confirmPayMsg:"Confirmer ce paiement ?" }
+    };
+    window.setLang = (lang) => {
+      localStorage.setItem('lang', lang);
+      document.querySelectorAll('.lang-btn').forEach(b => b.classList.toggle('active', b.textContent.includes(lang.toUpperCase() || (lang==='ar'?'عربي':''))));
+      document.querySelectorAll('[data-i18n]').forEach(el => el.textContent = i18n[lang][el.dataset.i18n] || el.textContent);
+      document.querySelectorAll('[data-i18n-placeholder]').forEach(el => el.placeholder = i18n[lang][el.dataset.i18nPlaceholder] || el.placeholder);
+      document.documentElement.lang = lang; document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr';
+    };
+    window.setLang(localStorage.getItem('lang') || 'ar');
+
+    let usersData = {};
+    $('adminLoginBtn').onclick = () => {
+      if($('adminPass').value === '0000') { $('loginBox').classList.add('hidden'); $('adminPanel').classList.remove('hidden'); startLiveListeners(); }
+      else alert(currentLang==='ar'?'كلمة المرور خاطئة':'Wrong password');
+    };
+    $('logoutBtn').onclick = () => location.reload();
+
+    const formatTime = (ms) => { const h=Math.floor(ms/3600000), m=Math.floor((ms%3600000)/60000), s=Math.floor((ms%60000)/1000); return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`; };
+    const updateTimers = () => {
+      const now = Date.now();
+      document.querySelectorAll('.profit-cell').forEach(el => {
+        const uid = el.dataset.uid; const u = usersData[uid]; if(!u?.lastProfitAdded) return;
+        const left = Math.max(0, 24*60*60*1000 - (now - (u.lastProfitAdded||u.packageActivatedAt||0)));
+        el.textContent = formatTime(left);
+      });
+      document.querySelectorAll('.expiry-cell').forEach(el => {
+        const uid = el.dataset.uid; const u = usersData[uid]; if(!u?.packageActivatedAt) return;
+        const days = Math.max(0, Math.ceil((30*24*60*60*1000 - (now - u.packageActivatedAt))/86400000));
+        el.textContent = `${days} d`;
+      });
+    };
+
+    const startLiveListeners = () => {
+      onSnapshot(collection(db, 'users'), (snap) => {
+        const counts = {vip1:0,vip2:0,vip3:0,vip4:0,vip5:0,vip6:0}; let total=0;
+        const tbody = $('usersTable').querySelector('tbody'); tbody.innerHTML = ''; usersData = {};
+        snap.forEach(d => {
+          const data = d.data(); usersData[d.id] = data; total++;
+          if(data.activePackage && counts[data.activePackage]!==undefined) counts[data.activePackage]++;
+          const last = data.lastProfitAdded || data.packageActivatedAt || 0;
+          const profitLeft = Math.max(0, 24*60*60*1000 - (Date.now()-last));
+          const daysLeft = data.packageActivatedAt ? Math.max(0, Math.ceil((30*24*60*60*1000 - (Date.now()-data.packageActivatedAt))/86400000)) : '-';
+          tbody.innerHTML += `<tr><td>${data.username}</td><td>$${data.balance||0}</td><td>${data.activePackage||'-'}</td><td class="profit-cell" data-uid="${d.id}">${formatTime(profitLeft)}</td><td class="expiry-cell" data-uid="${d.id}">${daysLeft}</td></tr>`;
+        });
+        const t = i18n[localStorage.getItem('lang')||'ar'];
+        $('statsGrid').innerHTML = `<div class="stat-card"><h3>${t.total}</h3><p>${total}</p></div>${Object.entries(counts).map(([k,v])=>`<div class="stat-card"><h3>${k.toUpperCase()}</h3><p>${v}</p></div>`).join('')}`;
+      });
+
+      onSnapshot(collection(db, 'deposits'), (snap) => {
+        const t = i18n[localStorage.getItem('lang')||'ar']; const tbody = $('depositsTable').querySelector('tbody'); tbody.innerHTML = '';
+        snap.forEach(d => { const data = d.data(); tbody.innerHTML += `<tr><td>${data.username}</td><td>$${data.amount}</td><td>${data.network}</td><td style="font-size:12px">${data.txId}</td><td class="${data.status==='pending'?'status-pending':'status-done'}">${data.status==='pending'?t.pending:t.done}</td><td>${data.status==='pending'?`<button onclick="window.confirmDeposit('${d.id}','${data.uid}',${data.amount})">${t.confirmDep}</button>`:'-'}</td></tr>`; });
+      });
+
+      onSnapshot(collection(db, 'withdrawals'), (snap) => {
+        const t = i18n[localStorage.getItem('lang')||'ar']; const tbody = $('withdrawalsTable').querySelector('tbody'); tbody.innerHTML = '';
+        snap.forEach(d => { const data = d.data(); tbody.innerHTML += `<tr><td>${data.username}</td><td>$${data.amount}</td><td>${data.network}</td><td style="word-break:break-all; font-size:12px">${data.wallet}</td><td class="${data.status==='pending'?'status-pending':'status-done'}">${data.status==='pending'?t.pendingW:t.paid}</td><td>${data.status==='pending'?`<button onclick="window.markPaid('${d.id}')">${t.confirmPay}</button>`:'-'}</td></tr>`; });
+      });
+
+      setInterval(updateTimers, 1000);
+    };
+
+    window.confirmDeposit = async (depId, uid, amount) => {
+      const t = i18n[localStorage.getItem('lang')||'ar']; if(!confirm(`${t.confirmMsg}$${amount}`)) return;
+      try { await updateDoc(doc(db, 'users', uid), { balance: increment(amount), lastDepositAt: serverTimestamp() }); await updateDoc(doc(db, 'deposits', depId), { status: 'completed', completedAt: serverTimestamp() }); }
+      catch(e) { alert('❌ ' + e.message); }
+    };
+    window.markPaid = async (id) => {
+      const t = i18n[localStorage.getItem('lang')||'ar']; if(!confirm(t.confirmPayMsg)) return;
+      try { await updateDoc(doc(db, 'withdrawals', id), { status: 'paid', paidAt: serverTimestamp() }); } catch(e) { alert('❌ ' + e.message); }
+    };
+  </script>
+</body>
+</html>
